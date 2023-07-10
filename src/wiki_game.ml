@@ -15,8 +15,15 @@ open! Core
    uniformity in article format. We can expect that all Wikipedia article links parsed
    from a Wikipedia page will have the form "/wiki/<TITLE>". *)
 let get_linked_articles contents : string list =
-  ignore (contents : string);
-  failwith "TODO"
+  let open Soup in
+  parse contents
+  $$ "a[href]"
+  |> to_list
+  |> List.map ~f: (fun a -> R.attribute "href" a)
+  |> List.filter 
+  |> List.map ~f:(fun li ->
+       texts li |> String.concat ~sep:"" |> String.strip)
+  |> List.filter ~f:(fun href_link)
 ;;
 
 let print_links_command =
