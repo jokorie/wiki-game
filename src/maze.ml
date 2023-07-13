@@ -4,13 +4,11 @@ module Position = struct
   module T = struct
     type t = int * int [@@deriving compare, hash, sexp]
   end
-include T
-include Comparable.Make(T)
-include Hashable.Make(T)
 
+  include T
+  include Comparable.Make (T)
+  include Hashable.Make (T)
 end
-
-
 
 let all_lines input_file =
   let lines =
@@ -58,7 +56,7 @@ let rec dfs ~board ~path ~row ~col ~r_max ~c_max ~visited =
     let child_moves = get_neighbors ~board ~row ~col ~r_max ~c_max in
     let path =
       List.filter_map child_moves ~f:(fun (child_row, child_col) ->
-        if not (Hash_set.mem visited (row, col))
+        if not (Hash_set.mem visited (child_row, child_col))
         then
           dfs
             ~board
@@ -75,12 +73,15 @@ let rec dfs ~board ~path ~row ~col ~r_max ~c_max ~visited =
 
 let command ~input_file =
   let board = all_lines input_file in
+  (* print_s [%message (board : char array array)]; *)
   let visited = Position.Hash_set.create () in
   let start_row, start_col = 1, 0 in
   let r_max = Array.length board in
   let c_max = Array.length (Array.get board 0) in
-  match dfs ~board ~path:[] ~row:start_row ~col:start_col ~r_max ~c_max ~visited with 
-  | None -> print_s[%message "No path found"]; []
+  match
+    dfs ~board ~path:[] ~row:start_row ~col:start_col ~r_max ~c_max ~visited
+  with
+  | None -> []
   | Some path -> path
 ;;
 
@@ -96,8 +97,8 @@ let solve_command =
           ~doc:"FILE a file containing a maze"
       in
       fun () ->
-        ignore (input_file : File_path.t);
-        failwith "TODO"]
+        let soln = command ~input_file in
+        print_s [%message (soln : (int * int) list)]]
 ;;
 
 let command =
