@@ -97,9 +97,9 @@ let get_linked_articles_wrapper ~rel_url ~how_to_fetch =
     | File_fetcher.How_to_fetch.Local _ -> rel_url
     | Remote -> "https://en.wikipedia.org/" ^ rel_url
   in
-  print_s [%message abs_url];
+  (* print_s [%message abs_url]; *)
   let contents = File_fetcher.fetch_exn how_to_fetch ~resource:abs_url in
-  print_s [%message (get_linked_articles contents : string list)];
+  (* print_s [%message (get_linked_articles contents : string list)]; *)
   get_linked_articles contents
 ;;
 
@@ -124,7 +124,7 @@ let clean_string string =
   |> Str.global_replace (Str.regexp {|)|}) ""
 ;;
 
-let rec dfs graph rel_url visited depth_rem how_to_fetch =
+let rec graph_create graph rel_url visited depth_rem how_to_fetch =
   match depth_rem >= 0 with
   | true ->
     Hash_set.add visited rel_url;
@@ -134,7 +134,7 @@ let rec dfs graph rel_url visited depth_rem how_to_fetch =
       let child_url_stored = clean_string child_url in
       G.add_edge graph rel_url_stored child_url_stored;
       if not (Hash_set.mem visited child_url)
-      then dfs graph child_url visited (depth_rem - 1) how_to_fetch
+      then graph_create graph child_url visited (depth_rem - 1) how_to_fetch
       else ())
   | false -> ()
 ;;
@@ -147,7 +147,7 @@ let rec dfs graph rel_url visited depth_rem how_to_fetch =
 let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
   let graph = G.create () in
   let visited = String.Hash_set.create () in
-  dfs graph origin visited max_depth how_to_fetch;
+  graph_create graph origin visited max_depth how_to_fetch;
   Dot.output_graph
     (Out_channel.create (File_path.to_string output_file))
     graph
@@ -185,6 +185,42 @@ let visualize_command =
         printf !"Done! Wrote dot file to %{File_path}\n%!" output_file]
 ;;
 
+let bfs rel_url desired_url depth_rem how_to_fetch =
+  let visited = String.Hash_set.create () in
+  let to_visit = [ rel_url ] in
+  let parent_map = String.Map.empty in
+  let rec traverse ~to_visit ~parent_map ~visited ~depth_rem =
+    match depth_rem, to_visit with
+    | 0, _ | _, [] -> None
+    | _, head :: tl ->
+      if not (Hash_set.mem visited head)
+      then (
+        (* check to see if Im the desired end node *)
+        (* List iter over all my children *)
+        (* add each child to end of list *)
+        (* call traverse on first element of list *)
+        match String.( = ) head desired_url with
+        | true -> Some (Map.add_exn parent_map ~key:desired_url ~data:head)
+        | false ->
+          let adj_pages =
+            get_linked_articles_wrapper ~rel_url:head ~how_to_fetch
+          in
+          let to_visit = tl @ adj_pages in
+          Hash_set.add visited head;
+          traverse ~to_visit ~parent_map ~visited ~depth_rem)
+      else traverse ~to_visit:tl ~parent_map ~visited ~depth_rem
+  in
+  traverse ~to_visit ~parent_map ~visited ~depth_rem
+;;
+
+let rec backtrack_path ~curr ~desired_start ~parent_map =
+  match String.( = ) curr desired_start with
+  | true -> [ curr ]
+  | false ->
+    let new_curr = Map.find_exn parent_map curr in
+    backtrack_path ~curr:new_curr ~desired_start ~parent_map @ [ curr ]
+;;
+
 (* [find_path] should attempt to find a path between the origin article and
    the destination article via linked articles.
 
@@ -195,11 +231,19 @@ let visualize_command =
    [max_depth] is useful to limit the time the program spends exploring the
    graph. *)
 let find_path ?(max_depth = 3) ~origin ~destination ~how_to_fetch () =
-  ignore (max_depth : int);
-  ignore (origin : string);
-  ignore (destination : string);
-  ignore (how_to_fetch : File_fetcher.How_to_fetch.t);
-  failwith "TODO"
+  print_s [%message destination];
+  let destination =
+    Str.global_replace
+      (Str.regexp {|https://en.wikipedia.org|})
+      ""
+      destination
+  in
+  match bfs origin destination max_depth how_to_fetch with
+  | None ->
+    print_s [%message "No mapping"];
+    None
+  | Some parent_map ->
+    Some (backtrack_path ~curr:destination ~desired_start:origin ~parent_map)
 ;;
 
 let find_path_command =
