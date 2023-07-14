@@ -185,8 +185,11 @@ let visualize_command =
         printf !"Done! Wrote dot file to %{File_path}\n%!" output_file]
 ;;
 
-let bfs rel_url desired_url depth_rem how_to_fetch =
+let bfs ~rel_url ~desired_url ~depth_rem ~how_to_fetch =
   let visited = String.Hash_set.create () in
+  let rel_url =
+    Str.global_replace (Str.regexp {|https://en.wikipedia.org|}) "" rel_url
+  in
   let to_visit = [ rel_url ] in
   let parent_map = String.Map.empty in
   let rec traverse ~to_visit ~parent_map ~visited ~depth_rem =
@@ -195,18 +198,27 @@ let bfs rel_url desired_url depth_rem how_to_fetch =
     | _, head :: tl ->
       if not (Hash_set.mem visited head)
       then (
+        (* print_s [%message head desired_url]; *)
         (* check to see if Im the desired end node *)
         (* List iter over all my children *)
         (* add each child to end of list *)
         (* call traverse on first element of list *)
         match String.( = ) head desired_url with
-        | true -> Some (Map.add_exn parent_map ~key:desired_url ~data:head)
+        | true ->
+          print_s [%message "string found!"];
+          Some parent_map
         | false ->
           let adj_pages =
             get_linked_articles_wrapper ~rel_url:head ~how_to_fetch
           in
           let to_visit = tl @ adj_pages in
           Hash_set.add visited head;
+          let parent_map =
+            List.fold ~init:parent_map adj_pages ~f:(fun p_map child ->
+              if not (Map.mem p_map child)
+              then Map.add_exn p_map ~key:child ~data:head
+              else p_map)
+          in
           traverse ~to_visit ~parent_map ~visited ~depth_rem)
       else traverse ~to_visit:tl ~parent_map ~visited ~depth_rem
   in
@@ -214,11 +226,12 @@ let bfs rel_url desired_url depth_rem how_to_fetch =
 ;;
 
 let rec backtrack_path ~curr ~desired_start ~parent_map =
+  (* print_s [%message curr desired_start]; *)
   match String.( = ) curr desired_start with
-  | true -> [ curr ]
+  | true -> [ Str.global_replace (Str.regexp {|/wiki/|}) "" curr ]
   | false ->
     let new_curr = Map.find_exn parent_map curr in
-    backtrack_path ~curr:new_curr ~desired_start ~parent_map @ [ curr ]
+    backtrack_path ~curr:new_curr ~desired_start ~parent_map @ [ Str.global_replace (Str.regexp {|/wiki/|}) "" curr ]
 ;;
 
 (* [find_path] should attempt to find a path between the origin article and
@@ -231,19 +244,35 @@ let rec backtrack_path ~curr ~desired_start ~parent_map =
    [max_depth] is useful to limit the time the program spends exploring the
    graph. *)
 let find_path ?(max_depth = 3) ~origin ~destination ~how_to_fetch () =
-  print_s [%message destination];
-  let destination =
+  (* print_s [%message origin]; print_s [%message destination]; *)
+  let rel_destination =
     Str.global_replace
       (Str.regexp {|https://en.wikipedia.org|})
       ""
       destination
   in
-  match bfs origin destination max_depth how_to_fetch with
+  let rel_origin =
+    Str.global_replace (Str.regexp {|https://en.wikipedia.org|}) "" origin
+  in
+  print_s [%message rel_origin];
+  print_s [%message rel_destination];
+  match
+    bfs
+      ~rel_url:origin
+      ~desired_url:rel_destination
+      ~depth_rem:max_depth
+      ~how_to_fetch
+  with
   | None ->
-    print_s [%message "No mapping"];
+    (* print_s [%message "No mapping"]; *)
     None
   | Some parent_map ->
-    Some (backtrack_path ~curr:destination ~desired_start:origin ~parent_map)
+    (* print_s [%message "We in find_path" (parent_map : string String.Map.t)]; *)
+    Some
+      (backtrack_path
+         ~curr:rel_destination
+         ~desired_start:rel_origin
+         ~parent_map)
 ;;
 
 let find_path_command =
