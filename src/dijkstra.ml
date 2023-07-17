@@ -153,8 +153,12 @@ module Nodes = struct
             | false -> best_node_id, (best_dist, best_via)))
     in
     match best_dist < 0 with
-    | true -> None
-    | false -> Some (next_node_id, (best_dist, best_via_id))
+    | true ->
+      (* print_s [%message "No next node found"]; *)
+      None
+    | false ->
+      (* print_s [%message "Next Node found"]; *)
+      Some (next_node_id, (best_dist, best_via_id))
   ;;
 
   let%expect_test "next_node" =
@@ -185,7 +189,7 @@ module Nodes = struct
     | Origin -> [ curr_node ]
     | Done { via } -> path t via @ [ curr_node ]
     | _ ->
-      print_s [%message "No complete path"];
+      (* print_s [%message "No complete path"]; *)
       []
   ;;
 
@@ -204,6 +208,15 @@ let rec branch_out
   | true -> Some nodes_map
   | false ->
     let neighbors = Edges.neighbors edges curr_node in
+    (*maybe I need to filter neighbors*)
+    let neighbors =
+      List.filter neighbors ~f:(fun (node_id, _) ->
+        match Node.state (Map.find_exn nodes_map node_id) with
+        | Origin -> false
+        | Done _ -> false
+        | _ -> true)
+    in
+    (* print_s [%message "Neighbors are: " (neighbors : (Node_id.t * int) list)]; *)
     let nodes_map =
       List.fold
         neighbors
@@ -219,8 +232,12 @@ let rec branch_out
     (match next_node with
      | None -> None
      | Some (next_node, _) ->
-       Nodes.set_state nodes_map next_node (Done { via = curr_node });
-       (*this is an error*)
+       let _, prev_node =
+         match Node.state (Map.find_exn nodes_map next_node) with
+         | Todo { distance; via } -> distance, via
+         | _ -> -1, curr_node
+       in
+       Nodes.set_state nodes_map next_node (Done { via = prev_node });
        branch_out ~nodes_map ~curr_node:next_node ~edges ~destination)
 ;;
 
@@ -235,12 +252,12 @@ let shortest_path ~edges ~(origin : Node_id.t) ~destination : Node_id.t list =
   in
   match nodes_map with
   | None ->
-    print_s [%message "No Map"];
+    (* print_s [%message "No Map"]; *)
     []
   | Some nodes_map -> Nodes.path nodes_map destination
 ;;
 
-let%expect_test ("shortest_path") =
+let%expect_test "shortest_path" =
   let n = Node_id.create in
   let n0, n1, n2, n3, n4, n5 = n 0, n 1, n 2, n 3, n 4, n 5 in
   let edges =
